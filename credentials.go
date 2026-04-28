@@ -115,20 +115,34 @@ func (s *Store) Get(id string) (*Credentials, error) {
 	return scanCredential(rows)
 }
 
-// Resolve returns the best available credential for a provider, applying
-// server-mode refresh if needed. Pass an empty intendedApp to skip filtering.
-func (s *Store) Resolve(provider string, intendedApp string) (*Credentials, error) {
-	q := `SELECT ` + credentialColumns + ` FROM credentials WHERE provider = ? AND enabled = 1`
-	args := []any{provider}
-	if intendedApp != "" {
-		q += ` AND (intended_app = '' OR intended_app = ?)`
-		args = append(args, intendedApp)
-	}
-	q += ` ORDER BY priority ASC, error_count ASC`
+// ResolveQuery narrows a Resolve() lookup beyond just provider.
+type ResolveQuery struct {
+	Provider    string
+	Account     string // empty = any account
+	IntendedApp string // empty = any app; non-empty allows match if intended_app is empty OR equal
+}
 
-	rows, err := s.db.Query(q, args...)
+// Resolve returns the best available credential matching the query, applying
+// server-mode refresh if needed.
+func (s *Store) Resolve(q ResolveQuery) (*Credentials, error) {
+	if q.Provider == "" {
+		return nil, fmt.Errorf("provider is required")
+	}
+	sql := `SELECT ` + credentialColumns + ` FROM credentials WHERE provider = ? AND enabled = 1`
+	args := []any{q.Provider}
+	if q.Account != "" {
+		sql += ` AND account = ?`
+		args = append(args, q.Account)
+	}
+	if q.IntendedApp != "" {
+		sql += ` AND (intended_app = '' OR intended_app = ?)`
+		args = append(args, q.IntendedApp)
+	}
+	sql += ` ORDER BY priority ASC, error_count ASC`
+
+	rows, err := s.db.Query(sql, args...)
 	if err != nil {
-		return nil, fmt.Errorf("querying credentials for %s: %w", provider, err)
+		return nil, fmt.Errorf("querying credentials for %s: %w", q.Provider, err)
 	}
 	defer rows.Close()
 
@@ -152,7 +166,7 @@ func (s *Store) Resolve(provider string, intendedApp string) (*Credentials, erro
 		return c, nil
 	}
 
-	return nil, fmt.Errorf("no credentials for provider %s", provider)
+	return nil, fmt.Errorf("no credentials for provider %s account=%q intended_app=%q", q.Provider, q.Account, q.IntendedApp)
 }
 
 // ResolveByID returns a single credential by id, applying server-mode refresh if needed.
@@ -247,7 +261,7 @@ func (s *Store) ResolveForModel(modelID string, providerLookup func(modelID stri
 	if err != nil {
 		return nil, err
 	}
-	return s.Resolve(provider, "")
+	return s.Resolve(ResolveQuery{Provider: provider})
 }
 
 // ListFilter narrows a List() call.

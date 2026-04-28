@@ -134,12 +134,11 @@ func migrateApiauth(store *authstore.Store, dryRun bool) error {
 	count := 0
 	for tokRows.Next() {
 		var prov, account, scopes, access, refresh string
-		var expiresUnix int64
-		if err := tokRows.Scan(&prov, &account, &scopes, &access, &refresh, &expiresUnix); err != nil {
+		var expiresMs int64
+		if err := tokRows.Scan(&prov, &account, &scopes, &access, &refresh, &expiresMs); err != nil {
 			return err
 		}
-		// apiauth stored expires_at as unix seconds; auth-store uses unix ms.
-		expiresMs := expiresUnix * 1000
+		// apiauth stores expires_at in unix ms (matches auth-store).
 
 		c := authstore.Credentials{
 			ID:           "cred_apiauth_" + sanitize(prov+"_"+account),

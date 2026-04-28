@@ -99,16 +99,25 @@ func (s *Server) handleResolveByProvider(w http.ResponseWriter, r *http.Request)
 	provider := r.PathValue("provider")
 	app := appFromCtx(r.Context())
 	reason := reasonFromCtx(r.Context())
-	intendedApp := r.URL.Query().Get("intended_app")
+	q := r.URL.Query()
+	account := q.Get("account")
+	intendedApp := q.Get("intended_app")
 	if intendedApp == "" {
 		intendedApp = app
 	}
 
-	c, err := s.cfg.Store.Resolve(provider, intendedApp)
+	c, err := s.cfg.Store.Resolve(authstore.ResolveQuery{
+		Provider:    provider,
+		Account:     account,
+		IntendedApp: intendedApp,
+	})
 	if err != nil {
 		// Try again without the intended_app filter; the request may be a
 		// cross-app use which is allowed but flagged.
-		c, err = s.cfg.Store.Resolve(provider, "")
+		c, err = s.cfg.Store.Resolve(authstore.ResolveQuery{
+			Provider: provider,
+			Account:  account,
+		})
 		if err != nil {
 			s.cfg.Store.LogAccess(authstore.AuditEntry{
 				Provider:   provider,
