@@ -412,29 +412,6 @@ func (s *Store) Refresh(id string) error {
 	return s.refreshOAuthCredential(c)
 }
 
-func (s *Store) refreshOAuthCredential(c *Credentials) error {
-	p, ok := s.oauthProviders[c.Provider]
-	if !ok {
-		return fmt.Errorf("no OAuth provider registered for %s", c.Provider)
-	}
-
-	newAccess, newRefresh, expiresMs, err := p.RefreshToken(c.Token, c.RefreshToken)
-	if err != nil {
-		return fmt.Errorf("refresh failed for %s: %w", c.ID, err)
-	}
-
-	c.Token = newAccess
-	if newRefresh != "" {
-		c.RefreshToken = newRefresh
-	}
-	c.ExpiresAt = expiresMs
-	c.LastRefreshedAt = time.Now().UnixMilli()
-
-	_, err = s.db.Exec(`UPDATE credentials SET token = ?, refresh_token = ?, expires_at = ?, last_refreshed_at = ?, last_error = '', error_count = 0 WHERE id = ?`,
-		c.Token, c.RefreshToken, c.ExpiresAt, c.LastRefreshedAt, c.ID)
-	return err
-}
-
 // AcquireLease grants exclusive use of a credential to a client app for ttl.
 // Returns the lease_id (callers must echo this back on heartbeat/release/write-back).
 // Errors if the credential is not in client_lease mode, or is already leased.

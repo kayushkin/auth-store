@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kayushkin/auth-store/internal/oauth"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -15,16 +17,10 @@ import (
 type Store struct {
 	db             *sql.DB
 	path           string
-	oauthProviders map[string]OAuthProvider
+	oauthProviders map[string]oauth.Provider
 
 	refreshMu   sync.Mutex
 	refreshLock map[string]*sync.Mutex
-}
-
-// OAuthProvider is the interface for refreshing OAuth tokens.
-type OAuthProvider interface {
-	ID() string
-	RefreshToken(accessToken, refreshToken string) (newAccess, newRefresh string, expiresAtMs int64, err error)
 }
 
 // Refresh modes for credentials.
@@ -130,7 +126,7 @@ func Open(path string) (*Store, error) {
 	s := &Store{
 		db:             db,
 		path:           path,
-		oauthProviders: make(map[string]OAuthProvider),
+		oauthProviders: make(map[string]oauth.Provider),
 		refreshLock:    make(map[string]*sync.Mutex),
 	}
 	if err := s.migrate(); err != nil {
@@ -154,17 +150,6 @@ func (s *Store) DB() *sql.DB {
 // Path returns the on-disk database path.
 func (s *Store) Path() string {
 	return s.path
-}
-
-// RegisterOAuthProvider registers a provider for OAuth token refresh.
-func (s *Store) RegisterOAuthProvider(p OAuthProvider) {
-	s.oauthProviders[p.ID()] = p
-}
-
-// HasOAuthProvider reports whether a provider is registered.
-func (s *Store) HasOAuthProvider(id string) bool {
-	_, ok := s.oauthProviders[id]
-	return ok
 }
 
 // refreshMutex returns a per-credential mutex for serialising refresh attempts.

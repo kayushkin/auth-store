@@ -3,6 +3,7 @@ package server
 
 import (
 	"net/http"
+	"time"
 
 	authstore "github.com/kayushkin/auth-store"
 )
@@ -16,14 +17,20 @@ type Config struct {
 
 // Server is the auth-store HTTP server.
 type Server struct {
-	cfg Config
-	mux *http.ServeMux
+	cfg   Config
+	mux   *http.ServeMux
+	flows *flowRegistry
 }
 
 // New constructs a Server.
 func New(cfg Config) *Server {
-	s := &Server{cfg: cfg, mux: http.NewServeMux()}
+	s := &Server{
+		cfg:   cfg,
+		mux:   http.NewServeMux(),
+		flows: newFlowRegistry(),
+	}
 	s.routes()
+	go s.flowSweepLoop()
 	return s
 }
 
@@ -58,4 +65,13 @@ func (s *Server) routes() {
 
 	// Audit.
 	s.mux.Handle("GET /api/audit", s.protected(s.handleAudit))
+}
+
+// flowSweepLoop periodically removes pending OAuth flows that never completed.
+func (s *Server) flowSweepLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.flows.sweep(15 * time.Minute)
+	}
 }
