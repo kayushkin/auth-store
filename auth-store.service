@@ -1,0 +1,17 @@
+[Unit]
+Description=auth-store — central credential vault and OAuth broker
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/kayushkincom/bin/auth-store --port 8303
+Environment=AUTHSTORE_TOKEN=changeme
+Environment=AUTHSTORE_CALLBACK_URL=https://kayushkin.com/api/authstore/callback
+Environment=HOME=/home/kayushkincom
+Environment=PATH=/home/kayushkincom/.local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+WorkingDirectory=/home/kayushkincom/repos/auth-store
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
