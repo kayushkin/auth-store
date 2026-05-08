@@ -216,14 +216,17 @@ func (s *Server) handleCreateCredential(w http.ResponseWriter, r *http.Request) 
 	}
 	c := in.toCredentials()
 	if err := s.cfg.Store.Set(c); err != nil {
+		s.logCRUD(r, authstore.AuditActionCreate, in.ID, in.Provider, in.Owner, false, err.Error())
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	stored, err := s.cfg.Store.Get(c.ID)
 	if err != nil {
+		s.logCRUD(r, authstore.AuditActionCreate, c.ID, c.Provider, c.Owner, false, err.Error())
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.logCRUD(r, authstore.AuditActionCreate, stored.ID, stored.Provider, stored.Owner, true, "")
 	writeJSON(w, http.StatusCreated, toView(stored))
 }
 
@@ -231,11 +234,13 @@ func (s *Server) handleUpdateCredential(w http.ResponseWriter, r *http.Request) 
 	id := r.PathValue("id")
 	existing, err := s.cfg.Store.Get(id)
 	if err != nil {
+		s.logCRUD(r, authstore.AuditActionUpdate, id, "", "", false, err.Error())
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	var in credentialInput
 	if err := decodeJSON(r, &in); err != nil {
+		s.logCRUD(r, authstore.AuditActionUpdate, id, existing.Provider, existing.Owner, false, "invalid JSON: "+err.Error())
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
@@ -272,6 +277,37 @@ func (s *Server) handleUpdateCredential(w http.ResponseWriter, r *http.Request) 
 		c.Password = existing.Password
 	}
 
+	// Preserve metadata fields when caller omits them. Same rationale as
+	// the secret preservation above: a partial update (e.g. dash UI sending
+	// just {owner: "slava"}) must not silently zero the rest of the row.
+	if c.Account == "" {
+		c.Account = existing.Account
+	}
+	if c.Label == "" {
+		c.Label = existing.Label
+	}
+	if c.IntendedApp == "" {
+		c.IntendedApp = existing.IntendedApp
+	}
+	if c.IntendedPurpose == "" {
+		c.IntendedPurpose = existing.IntendedPurpose
+	}
+	if c.ClientID == "" {
+		c.ClientID = existing.ClientID
+	}
+	if c.TenantID == "" {
+		c.TenantID = existing.TenantID
+	}
+	if c.RedirectURL == "" {
+		c.RedirectURL = existing.RedirectURL
+	}
+	if c.BaseURL == "" {
+		c.BaseURL = existing.BaseURL
+	}
+	if c.ExpiresAt == 0 {
+		c.ExpiresAt = existing.ExpiresAt
+	}
+
 	// Lease state is never editable through this endpoint.
 	c.LeaseID = existing.LeaseID
 	c.LeaseHolderApp = existing.LeaseHolderApp
@@ -283,22 +319,53 @@ func (s *Server) handleUpdateCredential(w http.ResponseWriter, r *http.Request) 
 	c.ErrorCount = existing.ErrorCount
 
 	if err := s.cfg.Store.Set(c); err != nil {
+		s.logCRUD(r, authstore.AuditActionUpdate, id, c.Provider, c.Owner, false, err.Error())
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	stored, err := s.cfg.Store.Get(id)
 	if err != nil {
+		s.logCRUD(r, authstore.AuditActionUpdate, id, c.Provider, c.Owner, false, err.Error())
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.logCRUD(r, authstore.AuditActionUpdate, stored.ID, stored.Provider, stored.Owner, true, "")
 	writeJSON(w, http.StatusOK, toView(stored))
 }
 
 func (s *Server) handleDeleteCredential(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	existing, _ := s.cfg.Store.Get(id) // best-effort, just for audit context
 	if err := s.cfg.Store.Delete(id); err != nil {
+		s.logCRUD(r, authstore.AuditActionDelete, id, "", "", false, err.Error())
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	provider, owner := "", ""
+	if existing != nil {
+		provider, owner = existing.Provider, existing.Owner
+	}
+	s.logCRUD(r, authstore.AuditActionDelete, id, provider, owner, true, "")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// logCRUD records an audit entry for a credential mutation. CRUD routes use
+// the `protected` middleware (bearer-only), so X-Auth-App / X-Auth-Reason
+// are not enforced — the headers are best-effort and absent values appear
+// blank in the audit trail. Errors are swallowed (writes to a separate
+// table; we never want auditing failure to mask the API response).
+func (s *Server) logCRUD(r *http.Request, action, credID, provider, owner string, ok bool, errMsg string) {
+	app := r.Header.Get("X-Auth-App")
+	reason := r.Header.Get("X-Auth-Reason")
+	_ = s.cfg.Store.LogAccess(authstore.AuditEntry{
+		CredentialID: credID,
+		Provider:     provider,
+		Owner:        owner,
+		App:          app,
+		Reason:       reason,
+		Action:       action,
+		OK:           ok,
+		Error:        errMsg,
+		RemoteAddr:   remoteAddr(r),
+	})
 }
