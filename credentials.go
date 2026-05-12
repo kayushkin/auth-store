@@ -348,6 +348,16 @@ func (s *Store) SetHealth(id string, success bool, errMsg string) {
 	}
 }
 
+// MarkReloginSuccess records a successful OAuth re-login: refreshes the
+// last_refreshed_at marker and clears any accumulated error state. The
+// general Set() UPSERT does not update these columns, so callers writing
+// new tokens via Set() must call this to surface the new health state.
+func (s *Store) MarkReloginSuccess(id string) error {
+	now := time.Now().UnixMilli()
+	_, err := s.db.Exec(`UPDATE credentials SET last_refreshed_at = ?, last_error = '', last_error_at = 0, error_count = 0 WHERE id = ?`, now, id)
+	return err
+}
+
 // ActiveKey returns the usable key/token from a credential based on its auth_type.
 func ActiveKey(cred *Credentials) string {
 	if cred == nil {

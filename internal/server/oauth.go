@@ -242,6 +242,10 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		if err := s.cfg.Store.MarkReloginSuccess(existing.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		stored = existing
 	} else {
 		c := authstore.Credentials{
