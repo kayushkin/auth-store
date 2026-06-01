@@ -146,9 +146,59 @@ func (s *Server) handleStartOAuthLogin(w http.ResponseWriter, r *http.Request) {
 		RemoteAddr:   remoteAddr(r),
 	})
 
-	writeJSON(w, http.StatusOK, map[string]string{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"auth_url": res.AuthURL,
 		"state":    state,
+		// requires_code is true for out-of-band providers (e.g. Anthropic) whose
+		// authorization page displays a code the user must paste back via the
+		// /complete endpoint, rather than redirecting to /oauth/callback.
+		"requires_code": res.Manual,
+	})
+}
+
+// completeRequest is the body for manual (out-of-band) code submission.
+type completeRequest struct {
+	State string `json:"state"`
+	Code  string `json:"code"`
+}
+
+// handleCompleteOAuthLogin finishes an out-of-band OAuth flow where the user
+// pastes the authorization code (Anthropic's console copy/paste page). It looks
+// up the pending flow by state and exchanges the code, identically to the
+// browser-redirect callback, but returns JSON for the API caller.
+func (s *Server) handleCompleteOAuthLogin(w http.ResponseWriter, r *http.Request) {
+	providerID := r.PathValue("provider")
+
+	var in completeRequest
+	if err := decodeJSON(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if in.State == "" || in.Code == "" {
+		writeError(w, http.StatusBadRequest, "state and code are required")
+		return
+	}
+
+	flow := s.flows.take(in.State)
+	if flow == nil {
+		writeError(w, http.StatusBadRequest, "unknown or expired state")
+		return
+	}
+	if flow.provider != providerID {
+		writeError(w, http.StatusBadRequest, "provider mismatch for state")
+		return
+	}
+
+	stored, err := s.exchangeAndStore(r, flow, in.State, in.Code)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":       stored.ID,
+		"provider": stored.Provider,
+		"owner":    stored.Owner,
 	})
 }
 
@@ -170,10 +220,30 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "unknown or expired state")
 		return
 	}
+
+	stored, err := s.exchangeAndStore(r, flow, state, code)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `<!DOCTYPE html><html><body>
+<h2>Authenticated with %s</h2>
+<p>Owner: %s</p>
+<p>Credential id: <code>%s</code></p>
+<p>You can close this window.</p>
+</body></html>`, stored.Provider, stored.Owner, stored.ID)
+}
+
+// exchangeAndStore exchanges an authorization code for tokens and persists the
+// result (updating an existing credential or creating a new one). It is shared
+// by the browser-redirect callback and the manual /complete endpoint.
+func (s *Server) exchangeAndStore(r *http.Request, flow *pendingFlow, state, code string) (*authstore.Credentials, error) {
 	prov := s.cfg.Store.OAuthProvider(flow.provider)
 	if prov == nil {
-		writeError(w, http.StatusInternalServerError, "provider gone")
-		return
+		return nil, fmt.Errorf("provider gone")
 	}
 
 	// Anthropic provider stores a per-state PKCE verifier; pass it through.
@@ -194,8 +264,7 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 			Error:        err.Error(),
 			RemoteAddr:   remoteAddr(r),
 		})
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, err
 	}
 
 	owner := flow.owner
@@ -208,8 +277,7 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	if flow.credentialID != "" {
 		existing, err := s.cfg.Store.Get(flow.credentialID)
 		if err != nil {
-			writeError(w, http.StatusNotFound, err.Error())
-			return
+			return nil, err
 		}
 		existing.Token = tok.AccessToken
 		if tok.RefreshToken != "" {
@@ -239,12 +307,10 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 			existing.RedirectURL = flow.app.RedirectURL
 		}
 		if err := s.cfg.Store.Set(*existing); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+			return nil, err
 		}
 		if err := s.cfg.Store.MarkReloginSuccess(existing.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+			return nil, err
 		}
 		stored = existing
 	} else {
@@ -269,8 +335,7 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 			Enabled:         true,
 		}
 		if err := s.cfg.Store.Set(c); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+			return nil, err
 		}
 		stored = &c
 	}
@@ -286,12 +351,5 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		RemoteAddr:   remoteAddr(r),
 	})
 
-	w.Header().Set("Content-Type", "text/html")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `<!DOCTYPE html><html><body>
-<h2>Authenticated with %s</h2>
-<p>Owner: %s</p>
-<p>Credential id: <code>%s</code></p>
-<p>You can close this window.</p>
-</body></html>`, stored.Provider, stored.Owner, stored.ID)
+	return stored, nil
 }

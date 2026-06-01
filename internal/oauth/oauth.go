@@ -26,6 +26,11 @@ type LoginResult struct {
 	AuthURL      string
 	State        string
 	CodeVerifier string // PKCE; empty if provider doesn't use PKCE
+	// Manual is true for out-of-band flows where the provider displays the
+	// authorization code to the user instead of redirecting back to our
+	// callback (e.g. Anthropic's console copy/paste page). The caller must
+	// collect the pasted code and submit it to the /complete endpoint.
+	Manual bool
 }
 
 // TokenResult is what CompleteLogin and Refresh return.

@@ -62,6 +62,7 @@ func (s *Server) routes() {
 
 	// OAuth flow.
 	s.mux.Handle("POST /api/oauth/{provider}/login", s.protected(s.handleStartOAuthLogin))
+	s.mux.Handle("POST /api/oauth/{provider}/complete", s.protected(s.handleCompleteOAuthLogin))
 
 	// Audit.
 	s.mux.Handle("GET /api/audit", s.protected(s.handleAudit))

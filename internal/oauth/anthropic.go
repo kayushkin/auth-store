@@ -63,6 +63,10 @@ func (a *Anthropic) BeginLogin(ctx context.Context, _ AppCredentials, state stri
 		AuthURL:      anthropicAuthorizeURL + "?" + params.Encode(),
 		State:        state,
 		CodeVerifier: verifier,
+		// Anthropic redirects to its console callback page, which displays the
+		// code as "<code>#<state>" for the user to copy. There is no automatic
+		// redirect back to auth-store, so completion is manual.
+		Manual: true,
 	}, nil
 }
 
