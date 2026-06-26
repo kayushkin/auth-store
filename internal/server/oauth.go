@@ -72,6 +72,34 @@ type startLoginRequest struct {
 	RefreshMode     string `json:"refresh_mode,omitempty"`
 }
 
+// findExistingCredential returns the unique stored credential matching
+// provider+owner+account, or nil when there is no unambiguous match. It uses
+// List (not Resolve) so unhealthy credentials are still returned — re-login
+// must be able to find a credential precisely when its token has gone bad.
+func (s *Server) findExistingCredential(provider, owner, account string) *authstore.Credentials {
+	creds, err := s.cfg.Store.List(authstore.ListFilter{Provider: provider, Owner: owner})
+	if err != nil || len(creds) == 0 {
+		return nil
+	}
+	if account != "" {
+		var matches []authstore.Credentials
+		for _, c := range creds {
+			if c.Account == account {
+				matches = append(matches, c)
+			}
+		}
+		if len(matches) == 1 {
+			return &matches[0]
+		}
+		return nil
+	}
+	// No account specified: only safe to reuse when there is exactly one row.
+	if len(creds) == 1 {
+		return &creds[0]
+	}
+	return nil
+}
+
 func (s *Server) handleStartOAuthLogin(w http.ResponseWriter, r *http.Request) {
 	providerID := r.PathValue("provider")
 	prov := s.cfg.Store.OAuthProvider(providerID)
@@ -94,6 +122,18 @@ func (s *Server) handleStartOAuthLogin(w http.ResponseWriter, r *http.Request) {
 		ClientSecret: in.ClientSecret,
 		TenantID:     in.TenantID,
 		RedirectURL:  in.RedirectURL,
+	}
+	// If the caller didn't name a credential explicitly, try to find the
+	// existing row by (provider, owner, account). This lets the re-login flow
+	// (which keys by owner/account, e.g. the ApiAuth UI) reuse the stored
+	// client_id/secret instead of forcing the caller to re-supply them, and
+	// updates that row in place rather than creating a duplicate. Uses List, not
+	// Resolve, so an unhealthy credential (e.g. a dead refresh token — the exact
+	// thing being re-authed) is still found.
+	if in.CredentialID == "" {
+		if existing := s.findExistingCredential(providerID, in.Owner, in.Account); existing != nil {
+			in.CredentialID = existing.ID
+		}
 	}
 	if in.CredentialID != "" {
 		existing, err := s.cfg.Store.Get(in.CredentialID)
