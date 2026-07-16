@@ -60,7 +60,7 @@ func (g *Google) BeginLogin(ctx context.Context, app AppCredentials, state strin
 	return LoginResult{AuthURL: url, State: state}, nil
 }
 
-func (g *Google) CompleteLogin(ctx context.Context, app AppCredentials, code, _ string) (TokenResult, error) {
+func (g *Google) CompleteLogin(ctx context.Context, app AppCredentials, _, code, _ string) (TokenResult, error) {
 	cfg := g.config(app)
 	tok, err := cfg.Exchange(ctx, code)
 	if err != nil {

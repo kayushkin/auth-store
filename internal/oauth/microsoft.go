@@ -58,7 +58,7 @@ func (m *Microsoft) BeginLogin(ctx context.Context, app AppCredentials, state st
 	return LoginResult{AuthURL: url, State: state}, nil
 }
 
-func (m *Microsoft) CompleteLogin(ctx context.Context, app AppCredentials, code, _ string) (TokenResult, error) {
+func (m *Microsoft) CompleteLogin(ctx context.Context, app AppCredentials, _, code, _ string) (TokenResult, error) {
 	cfg := m.config(app)
 	tok, err := cfg.Exchange(ctx, code)
 	if err != nil {

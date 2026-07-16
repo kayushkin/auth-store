@@ -292,7 +292,7 @@ func (s *Server) exchangeAndStore(r *http.Request, flow *pendingFlow, state, cod
 		verifier = a.VerifierFor(state)
 	}
 
-	tok, err := prov.CompleteLogin(r.Context(), flow.app, code, verifier)
+	tok, err := prov.CompleteLogin(r.Context(), flow.app, state, code, verifier)
 	if err != nil {
 		s.cfg.Store.LogAccess(authstore.AuditEntry{
 			CredentialID: flow.credentialID,

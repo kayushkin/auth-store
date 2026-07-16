@@ -70,13 +70,14 @@ func (a *Anthropic) BeginLogin(ctx context.Context, _ AppCredentials, state stri
 	}, nil
 }
 
-func (a *Anthropic) CompleteLogin(ctx context.Context, _ AppCredentials, code, codeVerifier string) (TokenResult, error) {
+func (a *Anthropic) CompleteLogin(ctx context.Context, _ AppCredentials, state, code, codeVerifier string) (TokenResult, error) {
 	if codeVerifier == "" {
 		return TokenResult{}, fmt.Errorf("anthropic: PKCE code_verifier required")
 	}
 	payload := map[string]string{
 		"grant_type":    "authorization_code",
 		"client_id":     anthropicClientID,
+		"state":         state,
 		"code":          code,
 		"redirect_uri":  anthropicRedirectURI,
 		"code_verifier": codeVerifier,

@@ -52,8 +52,9 @@ type Provider interface {
 	BeginLogin(ctx context.Context, app AppCredentials, state string) (LoginResult, error)
 
 	// CompleteLogin exchanges the authorization code for tokens.
-	// codeVerifier is the PKCE verifier from BeginLogin (empty for non-PKCE providers).
-	CompleteLogin(ctx context.Context, app AppCredentials, code, codeVerifier string) (TokenResult, error)
+	// state is the original BeginLogin state token; codeVerifier is the PKCE
+	// verifier from BeginLogin (empty for non-PKCE providers).
+	CompleteLogin(ctx context.Context, app AppCredentials, state, code, codeVerifier string) (TokenResult, error)
 
 	// Refresh exchanges a refresh_token for a new access_token (and possibly a
 	// new refresh_token).
