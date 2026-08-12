@@ -7,10 +7,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -23,6 +25,7 @@ const (
 	anthropicClientID     = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 	anthropicAuthorizeURL = "https://claude.ai/oauth/authorize"
 	anthropicTokenURL     = "https://console.anthropic.com/v1/oauth/token"
+	anthropicPlatformTokenURL = "https://platform.claude.com/v1/oauth/token"
 	anthropicRedirectURI  = "https://console.anthropic.com/oauth/code/callback"
 	anthropicScopes       = "org:create_api_key user:profile user:inference"
 )
@@ -74,6 +77,10 @@ func (a *Anthropic) CompleteLogin(ctx context.Context, _ AppCredentials, state, 
 	if codeVerifier == "" {
 		return TokenResult{}, fmt.Errorf("anthropic: PKCE code_verifier required")
 	}
+	code = normalizeAnthropicCode(code)
+	if code == "" {
+		return TokenResult{}, fmt.Errorf("anthropic: authorization code required")
+	}
 	payload := map[string]string{
 		"grant_type":    "authorization_code",
 		"client_id":     anthropicClientID,
@@ -108,8 +115,49 @@ func (a *Anthropic) VerifierFor(state string) string {
 }
 
 func (a *Anthropic) postToken(ctx context.Context, payload map[string]string, prevRefresh string) (TokenResult, error) {
+	endpoints := []string{anthropicTokenURL}
+	if payload["grant_type"] == "authorization_code" {
+		endpoints = append(endpoints, anthropicPlatformTokenURL)
+	}
+
+	var firstErr error
+	for _, endpoint := range endpoints {
+		tr, err := a.postTokenOnce(ctx, endpoint, payload, prevRefresh)
+		if err == nil {
+			return tr, nil
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+
+		if errors.Is(err, errAnthropicInvalidRequestFormat) && payload["state"] != "" {
+			withoutState := cloneStringMap(payload)
+			delete(withoutState, "state")
+			tr, retryErr := a.postTokenOnce(ctx, endpoint, withoutState, prevRefresh)
+			if retryErr == nil {
+				return tr, nil
+			}
+			if !shouldRetryAnthropicToken(retryErr) {
+				return TokenResult{}, retryErr
+			}
+			continue
+		}
+		if !shouldRetryAnthropicToken(err) {
+			return TokenResult{}, err
+		}
+	}
+
+	if firstErr != nil {
+		return TokenResult{}, firstErr
+	}
+	return TokenResult{}, fmt.Errorf("anthropic token exchange failed")
+}
+
+var errAnthropicInvalidRequestFormat = errors.New("anthropic invalid request format")
+
+func (a *Anthropic) postTokenOnce(ctx context.Context, endpoint string, payload map[string]string, prevRefresh string) (TokenResult, error) {
 	body, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, "POST", anthropicTokenURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return TokenResult{}, err
 	}
@@ -125,6 +173,9 @@ func (a *Anthropic) postToken(ctx context.Context, payload map[string]string, pr
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
+		if resp.StatusCode == http.StatusBadRequest && bytes.Contains(respBody, []byte(`"message":"Invalid request format"`)) {
+			return TokenResult{}, fmt.Errorf("%w: %s", errAnthropicInvalidRequestFormat, respBody)
+		}
 		return TokenResult{}, fmt.Errorf("anthropic token returned %d: %s", resp.StatusCode, respBody)
 	}
 
@@ -149,6 +200,43 @@ func (a *Anthropic) postToken(ctx context.Context, payload map[string]string, pr
 		RefreshToken: refresh,
 		ExpiresAtMs:  expiresAt,
 	}, nil
+}
+
+func shouldRetryAnthropicToken(err error) bool {
+	return errors.Is(err, errAnthropicInvalidRequestFormat)
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func normalizeAnthropicCode(in string) string {
+	code := strings.TrimSpace(in)
+	if code == "" {
+		return ""
+	}
+	if u, err := url.Parse(code); err == nil && u.Scheme != "" && u.Host != "" {
+		if q := strings.TrimSpace(u.Query().Get("code")); q != "" {
+			code = q
+		} else {
+			code = u.String()
+		}
+	}
+	if i := strings.IndexByte(code, '#'); i >= 0 {
+		code = code[:i]
+	}
+	if strings.Contains(code, "code=") {
+		if u, err := url.Parse(code); err == nil {
+			if q := strings.TrimSpace(u.Query().Get("code")); q != "" {
+				code = q
+			}
+		}
+	}
+	return strings.TrimSpace(code)
 }
 
 func generatePKCE() (verifier, challenge string, err error) {
