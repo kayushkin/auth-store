@@ -477,7 +477,14 @@ func (s *Store) HeartbeatLease(credID, leaseID string, ttl time.Duration) (newEx
 }
 
 // ReleaseLease ends the lease and writes back final token state.
-// finalAccess/finalRefresh/finalExpiresAt are the latest values held by the client.
+// finalAccess/finalRefresh/finalExpiresAt are the latest values held by the
+// client. Every one of them is optional — a client that refreshed nothing
+// releases with none of them — and an omitted field keeps the stored value,
+// the same rule WriteBackTokens applies to an omitted refresh token. A final
+// access token and a final expiry travel together, exactly as WriteBackTokens
+// requires them to: either alone is refused, because a token with no stated
+// lifetime never looks expired and a lifetime with no token would extend one
+// the client did not replace.
 func (s *Store) ReleaseLease(credID, leaseID, finalAccess, finalRefresh string, finalExpiresAt int64) error {
 	c, err := s.Get(credID)
 	if err != nil {
@@ -492,9 +499,23 @@ func (s *Store) ReleaseLease(credID, leaseID, finalAccess, finalRefresh string, 
 	if finalExpiresAt != 0 && finalExpiresAt < c.ExpiresAt {
 		return fmt.Errorf("write-back expires_at (%d) is older than stored (%d)", finalExpiresAt, c.ExpiresAt)
 	}
+	if (finalAccess == "") != (finalExpiresAt == 0) {
+		return fmt.Errorf("a final access token and a final expires_at must be given together (access_token set: %t, expires_at set: %t)",
+			finalAccess != "", finalExpiresAt != 0)
+	}
+
+	token, refreshToken, expiresAt := c.Token, c.RefreshToken, c.ExpiresAt
+	if finalAccess != "" {
+		token = finalAccess
+		expiresAt = finalExpiresAt
+	}
+	if finalRefresh != "" {
+		refreshToken = finalRefresh
+	}
+
 	now := time.Now().UnixMilli()
 	_, err = s.db.Exec(`UPDATE credentials SET token = ?, refresh_token = ?, expires_at = ?, last_refreshed_at = ?, lease_id = '', lease_holder_app = '', lease_expires_at = 0 WHERE id = ?`,
-		finalAccess, finalRefresh, finalExpiresAt, now, credID)
+		token, refreshToken, expiresAt, now, credID)
 	return err
 }
 
