@@ -589,11 +589,18 @@ func scanCredential(rows *sql.Rows) (*Credentials, error) {
 }
 
 // MaskSecret masks a token/key for display (4 prefix, 4 suffix, *** between).
+//
+// Both cuts land on a rune boundary. Every provider key format on this box is
+// ASCII, so today the two budgets are met exactly; a secret carrying a
+// multi-byte rune across either cut would otherwise be served to the
+// credentials UI as U+FFFD, with no error anywhere on the path. The masked
+// value is display-only — nothing parses it or keys on it — so shortening a
+// budget by up to three bytes is the right repair rather than a refusal.
 func MaskSecret(s string) string {
 	if len(s) <= 12 {
 		return strings.Repeat("*", len(s))
 	}
-	return s[:4] + "..." + s[len(s)-4:]
+	return TruncateAtRuneBoundary(s, 4) + "..." + SuffixAtRuneBoundary(s, 4)
 }
 
 // randomID returns a hex-encoded random id of n bytes (so 2n chars).
