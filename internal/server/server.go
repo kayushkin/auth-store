@@ -6,6 +6,7 @@ import (
 	"time"
 
 	authstore "github.com/kayushkin/auth-store"
+	"github.com/kayushkin/llm-bridge/servicesettings"
 )
 
 // Config wires the server to its dependencies.
@@ -13,6 +14,9 @@ type Config struct {
 	Store       *authstore.Store
 	AuthToken   string // bearer token for /api/*; empty disables auth (with warning logged at startup)
 	CallbackURL string // public URL of /oauth/callback (used when starting OAuth flows)
+	// Settings is what GET /settings describes. Required: New panics without
+	// it, at boot, rather than at the first read of the route.
+	Settings *servicesettings.Registry
 }
 
 // Server is the auth-store HTTP server.
@@ -24,6 +28,9 @@ type Server struct {
 
 // New constructs a Server.
 func New(cfg Config) *Server {
+	if cfg.Settings == nil {
+		panic("auth-store: server.New needs the settings registry that GET /settings serves")
+	}
 	s := &Server{
 		cfg:   cfg,
 		mux:   http.NewServeMux(),
@@ -66,6 +73,11 @@ func (s *Server) routes() {
 
 	// Audit.
 	s.mux.Handle("GET /api/audit", s.protected(s.handleAudit))
+
+	// Settings: every environment variable the service reads, behind the same
+	// bearer as /api/*. The token is served as set or unset, never its value.
+	// PUT /settings/{key} is not mounted: no setting is Editable.
+	s.mux.Handle("GET /settings", s.protected(servicesettings.Handler(s.cfg.Settings, "/settings").ServeHTTP))
 }
 
 // flowSweepLoop periodically removes pending OAuth flows that never completed.

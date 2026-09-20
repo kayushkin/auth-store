@@ -25,6 +25,17 @@ go build -o /tmp/auth-store-build ./cmd/auth-store/
 echo "==> Pushing..."
 git push 2>/dev/null || echo "    (no remote or already up-to-date)"
 
+# A set AUTHSTORE_ variable that settings.go does not declare stops the new
+# binary at boot. Ask before the old one is stopped: build the registry from the
+# running service's own environment. The test prints a verdict, never a value.
+echo "==> Checking the running service's environment against the declared settings..."
+live_pid="$(systemctl --user show -p MainPID --value "$UNIT_NAME")"
+if [ -n "$live_pid" ] && [ "$live_pid" != "0" ]; then
+  go test -count=1 -run '^TestTheLiveProcessEnvironmentBuildsARegistry$' . -args -live-environment-file="/proc/$live_pid/environ"
+else
+  echo "    $UNIT_NAME is not running, so there is no environment to check"
+fi
+
 echo "==> Stopping service..."
 systemctl --user stop "$UNIT_NAME" 2>/dev/null || true
 sleep 1

@@ -13,6 +13,7 @@ import (
 
 	authstore "github.com/kayushkin/auth-store"
 	"github.com/kayushkin/auth-store/internal/server"
+	"github.com/kayushkin/llm-bridge/servicesettings"
 )
 
 func main() {
@@ -27,11 +28,18 @@ func main() {
 		addr    string
 		bindAll bool
 	)
-	flag.IntVar(&port, "port", 8303, "HTTP server port")
+	flag.IntVar(&port, "port", authstore.DefaultListenPort, "HTTP server port")
 	flag.StringVar(&dbPath, "db", "", "database path (default: ~/.config/auth-store/auth.db)")
 	flag.StringVar(&addr, "addr", "", "explicit listen address (overrides --port and --bind-all)")
 	flag.BoolVar(&bindAll, "bind-all", false, "bind to 0.0.0.0 instead of 127.0.0.1")
 	flag.Parse()
+
+	// Read before the store is opened: a misspelled AUTHSTORE_ variable stops
+	// the service here, with nothing touched.
+	settings, err := authstore.NewSettingsRegistry(port, servicesettings.ProcessEnvironment())
+	if err != nil {
+		log.Fatalf("read settings: %v", err)
+	}
 
 	store, err := authstore.Open(dbPath)
 	if err != nil {
@@ -50,19 +58,17 @@ func main() {
 		listenAddr = fmt.Sprintf("%s:%d", host, port)
 	}
 
-	authToken := os.Getenv("AUTHSTORE_TOKEN")
+	authToken := settings.String(authstore.SettingBearerToken)
 	if authToken == "" {
-		log.Println("WARNING: AUTHSTORE_TOKEN not set — /api/* endpoints are unauthenticated")
+		log.Println("WARNING: AUTHSTORE_TOKEN not set — /api/* endpoints and /settings are unauthenticated")
 	}
-	callbackURL := os.Getenv("AUTHSTORE_CALLBACK_URL")
-	if callbackURL == "" {
-		callbackURL = fmt.Sprintf("http://localhost:%d/oauth/callback", port)
-	}
+	callbackURL := settings.String(authstore.SettingOAuthCallbackURL)
 
 	srv := server.New(server.Config{
 		Store:       store,
 		AuthToken:   authToken,
 		CallbackURL: callbackURL,
+		Settings:    settings,
 	})
 
 	httpSrv := &http.Server{
