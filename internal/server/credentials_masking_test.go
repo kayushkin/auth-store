@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	authstore "github.com/kayushkin/auth-store"
+	"github.com/kayushkin/llm-bridge/servicesettings"
 )
 
 // auth-store is the credential vault every other service on this box reads from, and
@@ -54,7 +55,11 @@ func newTestServer(t *testing.T) (*Server, *authstore.Store) {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	return New(Config{Store: st, AuthToken: testBearer}), st
+	registry, err := authstore.NewSettingsRegistry(authstore.DefaultListenPort, servicesettings.MapEnvironment(nil))
+	if err != nil {
+		t.Fatalf("settings registry: %v", err)
+	}
+	return New(Config{Store: st, AuthToken: testBearer, Settings: registry}), st
 }
 
 func seedCredential(t *testing.T, st *authstore.Store, id string) {
