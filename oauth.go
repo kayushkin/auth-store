@@ -31,11 +31,12 @@ func (s *Store) OAuthProvider(id string) oauthProvider {
 }
 
 // RegisterDefaultOAuthProviders registers the built-in providers
-// (Anthropic, Google, Microsoft).
+// (Anthropic, Google, Microsoft, Spotify).
 func (s *Store) RegisterDefaultOAuthProviders() {
 	s.RegisterOAuthProvider(oauth.NewAnthropic())
 	s.RegisterOAuthProvider(oauth.NewGoogle(nil))
 	s.RegisterOAuthProvider(oauth.NewMicrosoft(nil))
+	s.RegisterOAuthProvider(oauth.NewSpotify(nil))
 }
 
 // refreshOAuthCredential refreshes an OAuth credential using the registered
