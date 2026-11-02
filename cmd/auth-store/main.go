@@ -100,12 +100,12 @@ func main() {
 
 func runMigrate(args []string) {
 	fs := flag.NewFlagSet("migrate", flag.ExitOnError)
-	from := fs.String("from", "", "source: aiauth | apiauth | mailstack")
+	from := fs.String("from", "", "source: apiauth | mailstack")
 	dst := fs.String("db", "", "destination auth-store db path (default ~/.config/auth-store/auth.db)")
 	dryRun := fs.Bool("dry-run", false, "print intended writes without persisting")
 	fs.Parse(args)
 	if *from == "" {
-		fmt.Fprintln(os.Stderr, "auth-store migrate --from <aiauth|apiauth|mailstack> [--db PATH] [--dry-run]")
+		fmt.Fprintln(os.Stderr, "auth-store migrate --from <apiauth|mailstack> [--db PATH] [--dry-run]")
 		os.Exit(2)
 	}
 	store, err := authstore.Open(*dst)
@@ -115,10 +115,6 @@ func runMigrate(args []string) {
 	defer store.Close()
 
 	switch *from {
-	case "aiauth":
-		if err := migrateAiauth(store, *dryRun); err != nil {
-			log.Fatalf("migrate aiauth: %v", err)
-		}
 	case "apiauth":
 		if err := migrateApiauth(store, *dryRun); err != nil {
 			log.Fatalf("migrate apiauth: %v", err)

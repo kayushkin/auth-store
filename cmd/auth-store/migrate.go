@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -13,86 +12,6 @@ import (
 	authstore "github.com/kayushkin/auth-store"
 	_ "modernc.org/sqlite"
 )
-
-// ============================================================================
-// aiauth → auth-store
-// ============================================================================
-
-type aiauthFile struct {
-	Profiles map[string]aiauthProfile `json:"profiles"`
-}
-
-type aiauthProfile struct {
-	Type     string `json:"type"`     // "api_key" | "token" | "oauth"
-	Provider string `json:"provider"`
-	Key      string `json:"key,omitempty"`
-	Token    string `json:"token,omitempty"`
-	Access   string `json:"access,omitempty"`
-	Refresh  string `json:"refresh,omitempty"`
-	Expires  int64  `json:"expires,omitempty"`
-}
-
-func migrateAiauth(store *authstore.Store, dryRun bool) error {
-	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, ".openclaw", "agents", "main", "agent", "auth-profiles.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read aiauth file: %w", err)
-	}
-
-	var f aiauthFile
-	if err := json.Unmarshal(data, &f); err != nil {
-		return fmt.Errorf("parse aiauth file: %w", err)
-	}
-
-	count := 0
-	for name, p := range f.Profiles {
-		c := authstore.Credentials{
-			ID:       "cred_aiauth_" + sanitize(name),
-			Provider: p.Provider,
-			Owner:    "", // aiauth has no owner concept; user fills via UI
-			Label:    name,
-			Priority: 100,
-			Enabled:  true,
-		}
-
-		switch p.Type {
-		case "api_key":
-			c.AuthType = authstore.AuthTypeAPIKey
-			c.RefreshMode = authstore.RefreshModeNone
-			c.APIKey = p.Key
-		case "token":
-			c.AuthType = authstore.AuthTypeToken
-			c.RefreshMode = authstore.RefreshModeNone
-			c.Token = p.Token
-			c.ExpiresAt = p.Expires
-		case "oauth":
-			c.AuthType = authstore.AuthTypeOAuth
-			// CC and similar harnesses auto-refresh internally — make these
-			// client_lease so auth-store doesn't race with the harness.
-			c.RefreshMode = authstore.RefreshModeClientLease
-			c.IntendedApp = "llm-bridge-server"
-			c.Token = p.Access
-			c.RefreshToken = p.Refresh
-			c.ExpiresAt = p.Expires
-		default:
-			log.Printf("  skip %s: unknown type %q", name, p.Type)
-			continue
-		}
-
-		if dryRun {
-			log.Printf("  [dry-run] would import %s as %s (provider=%s type=%s mode=%s)", name, c.ID, c.Provider, c.AuthType, c.RefreshMode)
-		} else {
-			if err := store.Set(c); err != nil {
-				return fmt.Errorf("set %s: %w", name, err)
-			}
-			log.Printf("  imported %s as %s", name, c.ID)
-		}
-		count++
-	}
-	log.Printf("aiauth: %d profiles processed", count)
-	return nil
-}
 
 // ============================================================================
 // apiauth → auth-store
