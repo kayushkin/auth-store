@@ -12,7 +12,7 @@ import (
 // jsonEscapedReplacementChar is what encoding/json actually writes for an
 // invalid UTF-8 byte: the six ASCII characters of the \ufffd escape, NOT the
 // encoded U+FFFD rune. Spelled here as a raw literal so the distinction
-// survives an editor that would otherwise normalise one into the other.
+// survives an editor that would otherwise normalize one into the other.
 const jsonEscapedReplacementChar = `\u` + `fffd`
 
 // This is the CALL-SITE test, and it exists because a test of MaskSecret alone

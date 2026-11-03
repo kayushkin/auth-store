@@ -13,7 +13,7 @@ import "unicode/utf8"
 // and schema.SuffixAtRuneBoundary; auth-store keeps a local copy rather than
 // importing tool-store, because a shared 20-line helper is not worth a module
 // dependency from the credential vault to the tool registry. The names and the
-// behaviour are the canonical ones so the two copies cannot drift apart
+// behavior are the canonical ones so the two copies cannot drift apart
 // silently.
 //
 // The walk costs at most three byte comparisons and allocates nothing, which is

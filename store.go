@@ -152,7 +152,7 @@ func (s *Store) Path() string {
 	return s.path
 }
 
-// refreshMutex returns a per-credential mutex for serialising refresh attempts.
+// refreshMutex returns a per-credential mutex for serializing refresh attempts.
 func (s *Store) refreshMutex(credID string) *sync.Mutex {
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()

@@ -103,7 +103,7 @@ func TestSetHealthSuccessIgnoresTheMessageArgument(t *testing.T) {
 // error with a live timestamp saying when it happened — a state no reader can
 // interpret, and one that only exists because the two paths disagree.
 //
-// This test pins current behaviour. If the asymmetry is ever resolved, this
+// This test pins current behavior. If the asymmetry is ever resolved, this
 // test is the thing that will notice, and its name says which way it went.
 func TestSetHealthSuccessLeavesLastErrorAtStanding(t *testing.T) {
 	store := newTestStore(t)
