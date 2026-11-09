@@ -11,24 +11,28 @@ import (
 // returns the last known access_token with leased=true so callers know it may
 // be stale; the lease holder is the authoritative source.
 type resolvedView struct {
-	ID           string `json:"id"`
-	Provider     string `json:"provider"`
-	Owner        string `json:"owner,omitempty"`
-	Account      string `json:"account,omitempty"`
-	Label        string `json:"label,omitempty"`
-	AuthType     string `json:"auth_type"`
-	RefreshMode  string `json:"refresh_mode"`
-	AccessToken  string `json:"access_token,omitempty"`
-	APIKey       string `json:"api_key,omitempty"`
-	Password     string `json:"password,omitempty"`
-	Username     string `json:"username,omitempty"`
-	Host         string `json:"host,omitempty"`
-	Port         int    `json:"port,omitempty"`
-	TLS          bool   `json:"tls,omitempty"`
-	BaseURL      string `json:"base_url,omitempty"`
-	ExpiresAt    int64  `json:"expires_at,omitempty"`
-	Leased       bool   `json:"leased"`
-	IntendedApp  string `json:"intended_app,omitempty"`
+	ID          string `json:"id"`
+	Provider    string `json:"provider"`
+	Owner       string `json:"owner,omitempty"`
+	Account     string `json:"account,omitempty"`
+	Label       string `json:"label,omitempty"`
+	AuthType    string `json:"auth_type"`
+	RefreshMode string `json:"refresh_mode"`
+	AccessToken string `json:"access_token,omitempty"`
+	APIKey      string `json:"api_key,omitempty"`
+	Password    string `json:"password,omitempty"`
+	Username    string `json:"username,omitempty"`
+	Host        string `json:"host,omitempty"`
+	Port        int    `json:"port,omitempty"`
+	TLS         bool   `json:"tls,omitempty"`
+	BaseURL     string `json:"base_url,omitempty"`
+	// ClientID names the app a key or token belongs to; it is an id, not a
+	// secret. An API key that only works with its client id (Plaid's
+	// secret) needs it beside the key.
+	ClientID    string `json:"client_id,omitempty"`
+	ExpiresAt   int64  `json:"expires_at,omitempty"`
+	Leased      bool   `json:"leased"`
+	IntendedApp string `json:"intended_app,omitempty"`
 }
 
 func toResolved(c *authstore.Credentials) resolvedView {
@@ -41,6 +45,7 @@ func toResolved(c *authstore.Credentials) resolvedView {
 		AuthType:    c.AuthType,
 		RefreshMode: c.RefreshMode,
 		BaseURL:     c.BaseURL,
+		ClientID:    c.ClientID,
 		ExpiresAt:   c.ExpiresAt,
 		Leased:      c.IsLeased(),
 		IntendedApp: c.IntendedApp,

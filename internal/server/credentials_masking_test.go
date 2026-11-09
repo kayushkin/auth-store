@@ -239,3 +239,28 @@ func TestCredentialRoutesRefuseAnUnauthenticatedReader(t *testing.T) {
 		}
 	}
 }
+
+// An API key that only works beside its client id (Plaid's secret) comes back
+// from /resolve with that client id; the id is not a secret.
+func TestResolveReturnsTheClientIDBesideAnAPIKey(t *testing.T) {
+	s, _ := newTestServer(t)
+	created := do(t, s, "POST", "/api/credentials",
+		`{"id":"cred_paired","provider":"bank-data","owner":"test","account":"sandbox","auth_type":"api_key","api_key":"the-secret","client_id":"the-client","base_url":"https://example.test"}`, nil)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create: status %d: %s", created.Code, created.Body.String())
+	}
+	w := do(t, s, "GET", "/api/credentials/cred_paired/resolve", "", map[string]string{
+		"X-Auth-App":    "test",
+		"X-Auth-Reason": "client id beside an api key",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("resolve: status %d: %s", w.Code, w.Body.String())
+	}
+	var view map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if view["client_id"] != "the-client" || view["api_key"] != "the-secret" {
+		t.Errorf("resolve answered client_id=%v api_key set=%v, want both", view["client_id"], view["api_key"] != nil)
+	}
+}
